@@ -72,8 +72,8 @@ func FlatpakDir(ctx context.Context, op eg.Op) error {
 
 	b := egflatpak.New(
 		"space.retrovibe.Daemon", "fractal",
-		egflatpak.Option.SDK("org.gnome.Sdk", "47").Runtime("org.gnome.Platform", "47").
-			CopyModule(builddir).
+		egflatpak.Option().SDK("org.gnome.Sdk", "47").Runtime("org.gnome.Platform", "47").
+			Modules(egflatpak.ModuleCopy(builddir)).
 			AllowWayland().
 			AllowDRI().
 			AllowNetwork().
@@ -93,8 +93,31 @@ func FlatpakManifestDaemon(ctx context.Context, o eg.Op) error {
 
 	b := egflatpak.New(
 		"space.retrovibe.Daemon", "shallows",
-		egflatpak.Option.SDK("org.gnome.Sdk", "47").Runtime("org.gnome.Platform", "47").
-			Tarball(tarball.GithubDownloadURL(pattern), tarball.SHA256(pattern)).
+		egflatpak.Option().SDK("org.gnome.Sdk", "47").Runtime("org.gnome.Platform", "47").
+			Modules(
+				egflatpak.NewModule("retrovibed", "simple", egflatpak.ModuleOptions().Commands(
+					"ls -lha .",
+					"mv lib/* /app/lib",
+					"mv lib* /app/lib",
+					"mv duckdb* /app/lib",
+					"pwd",
+					"ls -lha /app/lib",
+					"ls -lha .",
+					"cp -r . /app/bin",
+				).Sources(
+					egflatpak.SourceTarball(
+						tarball.GithubDownloadURL(pattern), tarball.SHA256(pattern),
+						egflatpak.SourceOptions().Destination("retrovibed")...,
+					),
+					egflatpak.SourceTarball(
+						"https://github.com/duckdb/duckdb/releases/download/v1.1.3/libduckdb-linux-amd64.zip",
+						"81199bf01b6d49941a38f426cad60e73c1ccd43f1f769a65ed8097d53fc7e40b",
+						egflatpak.SourceOptions().Destination("duckdb")...,
+					),
+					// flatpak.SourceGit("https://github.com/duckdb/duckdb.git", "v1.1.3"),
+				)...),
+				// egflatpak.ModuleTarball(tarball.GithubDownloadURL(pattern), tarball.SHA256(pattern)),
+			).
 			AllowWayland().
 			AllowDRI().
 			AllowNetwork().
@@ -107,11 +130,14 @@ func FlatpakManifestDaemon(ctx context.Context, o eg.Op) error {
 
 func FlatpakManifestClient(ctx context.Context, o eg.Op) error {
 	pattern := tarballpattern()
-
+	// https://github.com/duckdb/duckdb/releases/download/v1.1.3/libduckdb-linux-amd64.zip
+	// /app/lib
 	b := egflatpak.New(
 		"space.retrovibe.Client", "fractal",
-		egflatpak.Option.SDK("org.gnome.Sdk", "47").Runtime("org.gnome.Platform", "47").
-			Tarball(tarball.GithubDownloadURL(pattern), tarball.SHA256(pattern)).
+		egflatpak.Option().SDK("org.gnome.Sdk", "47").Runtime("org.gnome.Platform", "47").
+			Modules(
+				egflatpak.ModuleTarball(tarball.GithubDownloadURL(pattern), tarball.SHA256(pattern)),
+			).
 			AllowWayland().
 			AllowDRI().
 			AllowNetwork().
