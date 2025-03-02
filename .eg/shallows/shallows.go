@@ -29,6 +29,7 @@ func Generate(ctx context.Context, _ eg.Op) error {
 }
 
 func Install(ctx context.Context, _ eg.Op) error {
+	// go install -ldflags=\"-extldflags=-static\" -tags no_duckdb_arrow ./cmd/shallows/...
 	dstdir := tarball.Path(tarball.GitPattern("retrovibed"))
 	gruntime := runtime()
 	return shell.Run(
@@ -36,7 +37,7 @@ func Install(ctx context.Context, _ eg.Op) error {
 		gruntime.New("ldconfig -p | grep duckdb"),
 		gruntime.New("ld --verbose | grep SEARCH_DIR | tr -s ' ;'"),
 		gruntime.New("go env"),
-		gruntime.Newf("go install -ldflags=\"-extldflags=-static\" -tags %s ./cmd/shallows/...", strings.Join(buildTags, ",")).Environ("GOBIN", dstdir),
+		gruntime.Newf("go install -tags %s ./cmd/shallows/...", strings.Join(buildTags, ",")).Environ("GOBIN", dstdir),
 	)
 }
 
@@ -65,11 +66,13 @@ func Test() eg.OpFn {
 func Flatpak(ctx context.Context, op eg.Op) error {
 	runtime := shell.Runtime()
 	builddir := egenv.WorkingDirectory("fractal", "build", egfs.FindFirst(os.DirFS(egenv.WorkingDirectory("fractal", "build")), "bundle"))
-
+	// git clone -b v%s --depth 1 https://github.com/duckdb/duckdb.git duckdb
 	b := egflatpak.New(
 		"space.retrovibe.Daemon", "fractal",
-		egflatpak.Option.SDK("org.gnome.Sdk", "47").Runtime("org.gnome.Platform", "47").
-			CopyModule(builddir).
+		egflatpak.Option().SDK("org.gnome.Sdk", "47").Runtime("org.gnome.Platform", "47").
+			Modules(
+				egflatpak.ModuleCopy(builddir),
+			).
 			AllowWayland().
 			AllowDRI().
 			AllowNetwork().
