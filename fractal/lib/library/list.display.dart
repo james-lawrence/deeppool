@@ -1,5 +1,7 @@
 import 'package:fixnum/fixnum.dart' as fixnum;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:pasteboard/pasteboard.dart' as pasteboard;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:fractal/designkit.dart' as ds;
 import 'package:fractal/media.dart' as media;
@@ -51,6 +53,11 @@ class _AvailableListDisplay extends State<AvailableListDisplay> {
   }
 
   @override
+  void dispose() {
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final upload = (DropDoneDetails v) {
       setState(() {
@@ -93,45 +100,55 @@ class _AvailableListDisplay extends State<AvailableListDisplay> {
       });
     };
 
-    return ds.Overlay(
-      overlay: _player,
-      child: ds.Table(
-        loading: _loading,
-        cause: _cause,
-        leading: SearchTray(
-          onSubmitted: (v) {
-            setState(() {
-              _res.next.query = v;
-              _res.next.offset = fixnum.Int64(0);
-            });
-            refresh();
-          },
-          next: (i) {
-            setState(() {
-              _res.next.offset = i;
-            });
-            refresh();
-          },
-          current: _res.next.offset,
-          empty: fixnum.Int64(_res.items.length) < _res.next.limit,
-          trailing: ds.FileDropWell(
-            upload,
-            child: IconButton(
-              onPressed: () {},
-              icon: Icon(Icons.file_upload_outlined),
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): () {
+          print("PASTE ACTIVATED");
+          pasteboard.Pasteboard.files().then((files) {
+            print("DERP DERP ${files.length}");
+          });
+        },
+      },
+      child: ds.Overlay(
+        overlay: _player,
+        child: ds.Table(
+          loading: _loading,
+          cause: _cause,
+          leading: SearchTray(
+            onSubmitted: (v) {
+              setState(() {
+                _res.next.query = v;
+                _res.next.offset = fixnum.Int64(0);
+              });
+              refresh();
+            },
+            next: (i) {
+              setState(() {
+                _res.next.offset = i;
+              });
+              refresh();
+            },
+            current: _res.next.offset,
+            empty: fixnum.Int64(_res.items.length) < _res.next.limit,
+            trailing: ds.FileDropWell(
+              upload,
+              child: IconButton(
+                onPressed: () {},
+                icon: Icon(Icons.file_upload_outlined),
+              ),
             ),
           ),
+          children: _res.items,
+          (v) => media.RowDisplay(
+            media: v,
+            leading: [Icon(mimex.icon(v.mimetype))],
+            trailing: [
+              media.ButtonShare(current: v),
+              media.ButtonPlay(current: v),
+            ],
+          ),
+          empty: ds.FileDropWell(upload),
         ),
-        children: _res.items,
-        (v) => media.RowDisplay(
-          media: v,
-          leading: [Icon(mimex.icon(v.mimetype))],
-          trailing: [
-            media.ButtonShare(current: v),
-            media.ButtonPlay(current: v),
-          ],
-        ),
-        empty: ds.FileDropWell(upload),
       ),
     );
   }
