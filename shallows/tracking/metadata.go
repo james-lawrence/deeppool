@@ -11,6 +11,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/james-lawrence/deeppool/internal/x/duckdbx"
 	"github.com/james-lawrence/deeppool/internal/x/errorsx"
+	"github.com/james-lawrence/deeppool/internal/x/fsx"
 	"github.com/james-lawrence/deeppool/internal/x/langx"
 	"github.com/james-lawrence/deeppool/internal/x/md5x"
 	"github.com/james-lawrence/deeppool/internal/x/slicesx"
@@ -21,8 +22,6 @@ import (
 	"github.com/james-lawrence/torrent"
 	"github.com/james-lawrence/torrent/metainfo"
 	"golang.org/x/time/rate"
-
-	"github.com/gabriel-vasile/mimetype"
 )
 
 func MetadataOptionNoop(*Metadata) {}
@@ -93,7 +92,7 @@ func MetadataSearchBuilder() squirrel.SelectBuilder {
 	return squirrelx.PSQL.Select(sqlx.Columns(MetadataScannerStaticColumns)...).From("torrents_metadata")
 }
 
-func Download(ctx context.Context, q sqlx.Queryer, md *Metadata, t torrent.Torrent) (err error) {
+func Download(ctx context.Context, q sqlx.Queryer, vfs fsx.Virtual, md *Metadata, t torrent.Torrent) (err error) {
 	var (
 		downloaded int64
 		mhash      = md5.New()
@@ -115,26 +114,31 @@ func Download(ctx context.Context, q sqlx.Queryer, md *Metadata, t torrent.Torre
 		return errorsx.Wrap(err, "progress update failed")
 	}
 
-	content := t.NewReader()
-	defer content.Close()
-	cmimetype, err := mimetype.DetectReader(content)
-	if err != nil {
-		return errorsx.Wrap(err, "unable to determine mimetype")
+	log.Println("content transfer to library initiated")
+	defer log.Println("content transfer to library completed")
+	// need to get the path to the torrent media.
+	for tx := range library.TransferMedia(ctx, vfs, t.Metainfo().HashInfoBytes().HexString()) {
+		uid := md5x.FormatString(tx.MD5)
+
+		if err := fsx.Rename(vfs, tx.Path, uid); err != nil {
+			return errorsx.Wrap(err, "unable to rename content")
+		}
+
+		lmd := library.NewMetadata(
+			uid,
+			library.MetadataOptionDescription(md.Description),
+			library.MetadataOptionBytes(tx.Bytes),
+			library.MetadataOptionTorrentID(md.ID),
+			library.MetadataOptionMimetype(tx.Mimetype.String()),
+		)
+
+		if err := library.MetadataInsertWithDefaults(ctx, q, lmd).Scan(&lmd); err != nil {
+			return errorsx.Wrap(err, "unable to record library metadata")
+		}
+
+		log.Println("new library content", spew.Sdump(lmd))
 	}
 
-	lmd := library.NewMetadata(
-		md5x.FormatString(mhash),
-		library.MetadataOptionDescription(md.Description),
-		library.MetadataOptionBytes(md.Bytes),
-		library.MetadataOptionTorrentID(md.ID),
-		library.MetadataOptionMimetype(cmimetype.String()),
-	)
-
-	if err := library.MetadataInsertWithDefaults(ctx, q, lmd).Scan(&lmd); err != nil {
-		return errorsx.Wrap(err, "unable to record library metadata")
-	}
-
-	log.Println("new library content", spew.Sdump(lmd))
 	return nil
 }
 
